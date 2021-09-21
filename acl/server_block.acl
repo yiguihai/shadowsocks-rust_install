@@ -1,0 +1,15 @@
+# SERVERS
+# For ssserver, accepts requests from all clients by default
+[accept_all]
+
+# Blocks these clients
+[black_list]
+1.2.3.4
+127.0.0.1/8
+
+# Disallow these outbound addresses
+[outbound_block_list]
+127.0.0.1/8
+::1
+#第五人格国际服防止切换账户后更换为国外服务器,进入游戏前不要挂代理或VPN
+54.230.246.67

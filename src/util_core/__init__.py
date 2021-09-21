@@ -1,0 +1,5 @@
+HOME_DIR = '/etc/ssmanager'
+URL = 'https://github.com/yiguihai/shadowsocks_install/raw/dev'
+URL2 = 'https://cdn.jsdelivr.net/gh/yiguihai/shadowsocks_install@dev'
+common_install = 'apt install -y --no-install-recommends'
+common_remove = 'apt purge -y --auto-remove'

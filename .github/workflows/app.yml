@@ -1,0 +1,118 @@
+name: app
+
+on:
+  #watch:
+    #types: started
+  schedule:
+    - cron:  '0 0 */5 * *'
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+        
+    - name: Check version
+      run: |
+        curl -s -o /tmp/version https://raw.githubusercontent.com/yiguihai/shadowsocks_install/dev/version/version
+        source /tmp/version
+        old=($(shasum -a1 /tmp/version))
+        
+        now=$(wget -qO- https://api.github.com/repos/shadowsocks/kcptun-android/commits/master | jq -r '.sha')
+        if [[ "$kcptun_android" != ${now:=0} ]]; then
+          echo "kcptun-android 可更新 $now $kcptun_android"
+          sed -i "s/$kcptun_android/$now/g" /tmp/version
+          echo "kcptun_android=$now" >> $GITHUB_ENV
+        fi
+        now=$(wget -qO- https://api.github.com/repos/shadowsocks/shadowsocks-android/commits/master | jq -r '.sha')
+        if [[ "$shadowsocks_android" != ${now:=0} ]]; then
+          echo "shadowsocks-android 可更新 $now $shadowsocks_android"
+          sed -i "s/$shadowsocks_android/$now/g" /tmp/version
+          echo "shadowsocks_android=$now" >> $GITHUB_ENV
+        fi
+        new=($(shasum -a1 /tmp/version))
+        if [[ "$old" != "$new" ]]; then
+          echo "开始编译更新..."
+          echo "update=$new" >> $GITHUB_ENV
+          sudo -E timedatectl set-timezone "Asia/Shanghai"
+          sudo -E timedatectl set-ntp true
+          touch /tmp/upgrade.log /tmp/outputs.sh
+          #debug.keystore 用于签名apk文件，编译使用assembleDebug时生成$HOME/.android/debug.keystore
+        fi
+        
+    - name: Checkout
+      if: ${{ env.update }}
+      timeout-minutes: 2
+      with:
+        ref: dev
+        submodules: true
+      uses: actions/checkout@main
+
+    - name: kcptun-android
+      if: ${{ env.kcptun_android }}
+      run: |
+        cd /tmp
+        git clone --depth 1 https://github.com/shadowsocks/kcptun-android
+        cd kcptun-android
+        git submodule update --init
+        echo "<tr><td><a href="usr/app">kcptun-android</a></td><td><a href="https://github.com/shadowsocks/kcptun-android/commit/$(git log --pretty=format:"%H")">$(git log --pretty=format:"%s%n")</a></td></tr>" >> /tmp/upgrade.log
+        ./gradlew assembleRelease
+        jarsigner -storepass android -keystore ${GITHUB_WORKSPACE}/conf/debug.keystore -signedjar /tmp/kcptun-armeabi-v7a.apk app/build/outputs/apk/release/app-armeabi-v7a-release-unsigned.apk androiddebugkey
+        jarsigner -storepass android -keystore ${GITHUB_WORKSPACE}/conf/debug.keystore -signedjar /tmp/kcptun-arm64-v8a.apk app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk androiddebugkey
+        echo "cp -vf /tmp/kcptun-armeabi-v7a.apk /tmp/kcptun-arm64-v8a.apk ${GITHUB_WORKSPACE}/usr/app" >> /tmp/outputs.sh
+
+    - name: shadowsocks-android
+      if: ${{ env.shadowsocks_android }}
+      run: |
+        cd /tmp
+        git clone --depth 1 https://github.com/shadowsocks/shadowsocks-android
+        cd shadowsocks-android
+        git submodule update --init
+        echo "<tr><td><a href="usr/app">shadowsocks-android</a></td><td><a href="https://github.com/shadowsocks/shadowsocks-android/commit/$(git log --pretty=format:"%H")">$(git log --pretty=format:"%s%n")</a></td></tr>" >> /tmp/upgrade.log
+        git submodule update --remote
+        cargo update --manifest-path core/src/main/rust/shadowsocks-rust/Cargo.toml
+        #https://www.vogella.com/tutorials/GitSubmodules/article.html
+        #https://en.m.wikipedia.org/wiki/Reserved_IP_addresses
+        cp -f ${GITHUB_WORKSPACE}/acl/bypass-lan.acl core/src/main/assets/acl/bypass-lan.acl
+        cat >core/src/main/assets/acl/bypass-china.acl<<EOF
+        [proxy_all]
+
+        [bypass_list]
+        $(curl -s https://bgp.space/china.html | grep -oP '([0-9]+\.){3}[0-9]+?\/[0-9]{1,2}')
+        $(curl -s https://bgp.space/china6.html | grep -oP '([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}\/[0-9]{1,3}')
+        EOF
+        cat >core/src/main/assets/acl/bypass-lan-china.acl<<EOF
+        $(cat ${GITHUB_WORKSPACE}/acl/bypass-lan.acl)
+        $(curl -s https://bgp.space/china.html | grep -oP '([0-9]+\.){3}[0-9]+?\/[0-9]{1,2}')
+        $(curl -s https://bgp.space/china6.html | grep -oP '([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}\/[0-9]{1,3}')
+        EOF
+        cat >core/src/main/assets/acl/china-list.acl<<EOF
+        [bypass_all]
+
+        [proxy_list]
+        $(curl -s https://bgp.space/china.html | grep -oP '([0-9]+\.){3}[0-9]+?\/[0-9]{1,2}')
+        $(curl -s https://bgp.space/china6.html | grep -oP '([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}\/[0-9]{1,3}')
+        EOF
+        curl -s -o core/gfwlist/gfwlist.txt https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt
+        python2.7 core/gfwlist/parse.py -i core/gfwlist/gfwlist.txt -f core/src/main/assets/acl/gfwlist.acl
+        cd core/src/main/rust/shadowsocks-rust
+        rustup target add armv7-linux-androideabi aarch64-linux-android i686-linux-android x86_64-linux-android
+        rustup update
+        cd /tmp/shadowsocks-android
+        patch -p0 core/build.gradle.kts < ${GITHUB_WORKSPACE}/patch/build.gradle.kts.patch
+        ./gradlew assembleRelease
+        jarsigner -storepass android -keystore ${GITHUB_WORKSPACE}/conf/debug.keystore -signedjar /tmp/shadowsoccks-armeabi-v7a.apk mobile/build/outputs/apk/release/mobile-armeabi-v7a-release-unsigned.apk androiddebugkey
+        jarsigner -storepass android -keystore ${GITHUB_WORKSPACE}/conf/debug.keystore -signedjar /tmp/shadowsoccks-arm64-v8a.apk mobile/build/outputs/apk/release/mobile-arm64-v8a-release-unsigned.apk androiddebugkey
+        echo "cp -vf /tmp/shadowsoccks-armeabi-v7a.apk /tmp/shadowsoccks-arm64-v8a.apk ${GITHUB_WORKSPACE}/usr/app" >> /tmp/outputs.sh
+
+    - uses: actions/checkout@main
+    - run: |
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+        [ -z ${{ env.update }} ] && exit 0
+        bash src/make_readme.sh
+        bash /tmp/outputs.sh
+        cp -vf /tmp/version version
+        git add README.md version/version usr/app/*
+        git commit -m "${{ github.actor }} ${{ github.event_name }}"
+        git push -f origin dev
+        

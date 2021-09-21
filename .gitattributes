@@ -1,0 +1,2 @@
+*.html linguist-language=false
+backups/* linguist-language=false

@@ -1,0 +1,514 @@
+name: build
+
+on:
+  #push:
+    #branches: [ dev ]
+  #pull_request:
+    #branches: [ dev ]
+  #watch:
+    #types: started
+  schedule:
+    - cron:  '0 0,8,16 * * *'
+    #- cron:  '0 0 1,15,30 * *'
+  workflow_dispatch: #https://github.community/t/github-actions-workflow-not-running-from-api-call-workflow-dispatch-trigger/124793/2
+    inputs:
+      ssh:
+      reset:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.ssh == 'yes'
+    steps:
+    - run: touch /tmp/keepalive #ssh调试保活
+    - name: Setup Debug Session
+      uses: csexton/debugger-action@master
+  
+  x86_64-unknown-linux-gnu:
+    runs-on: ubuntu-18.04
+    if: ${{ github.event.inputs.ssh != 'yes' && github.event.repository.owner.id == github.event.sender.id }}
+    steps:
+    - name: install dependencies
+      continue-on-error: true
+      timeout-minutes: 3
+      run: |
+        sudo -E apt-get -qq update
+        sudo -E apt-get install --no-install-recommends gettext build-essential autoconf libtool automake unzip git cmake libev-dev jq
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        #echo "branch_name=${{ github.ref }}" >> $GITHUB_ENV
+        
+    - name: check version
+      run: |
+        curl -s -o /tmp/version https://raw.githubusercontent.com/${{ github.repository }}/${GITHUB_REF##*/}/version/version
+        source /tmp/version
+        old=($(shasum -a1 /tmp/version))
+        
+        now=$(wget -qO- https://api.github.com/repos/${{ github.repository }}/contents/src/manager.sh?ref=${GITHUB_REF##*/} | jq -r '.sha')
+        if [[ "$ss_main" != ${now:=0} ]]; then
+          echo "ss-main 可更新 $now $ss_main"
+          sed -i "s/$ss_main/$now/g" /tmp/version
+          echo "ss_main=$now" >> $GITHUB_ENV
+        fi
+        now=$(wget -qO- https://api.github.com/repos/${{ github.repository }}/contents/src/main.c?ref=${GITHUB_REF##*/} | jq -r '.sha')
+        if [[ "$ss_tool" != ${now:=0} ]]; then
+          echo "ss-tool 可更新 $now $ss_tool"
+          sed -i "s/$ss_tool/$now/g" /tmp/version
+          echo "ss_tool=$now" >> $GITHUB_ENV
+        fi
+        now=$(wget -qO- https://api.github.com/repos/xtaci/kcptun/commits/master | jq -r '.sha')
+        if [[ "$kcptun" != ${now:=0} ]]; then
+          echo "kcptun 可更新 $now $kcptun"
+          sed -i "s/$kcptun/$now/g" /tmp/version
+          echo "kcptun=$now" >> $GITHUB_ENV
+        fi
+        now=$(wget -qO- https://api.github.com/repos/teddysun/v2ray-plugin/commits/master | jq -r '.sha')
+        if [[ "$v2ray_plugin" != ${now:=0} ]]; then
+          echo "v2ray-plugin 可更新 $now $v2ray_plugin"
+          sed -i "s/$v2ray_plugin/$now/g" /tmp/version
+          echo "v2ray_plugin=$now" >> $GITHUB_ENV
+        fi
+        now=$(wget -qO- https://api.github.com/repos/fukuchi/libqrencode/commits/master | jq -r '.sha')
+        if [[ "$qrencode" != ${now:=0} ]]; then
+          echo "libqrencode 可更新 $now $qrencode"
+          sed -i "s/$qrencode/$now/g" /tmp/version
+          echo "qrencode=$now" >> $GITHUB_ENV
+        fi
+        now=$(wget -qO- https://api.github.com/repos/shadowsocks/simple-obfs/commits/master | jq -r '.sha')
+        if [[ "$simple_obfs" != ${now:=0} ]]; then
+          echo "simple-obfs 可更新 $now $simple_obfs"
+          sed -i "s/$simple_obfs/$now/g" /tmp/version
+          echo "simple_obfs=$now" >> $GITHUB_ENV
+        fi
+        now=$(wget -qO- https://api.github.com/repos/shadowsocksrr/shadowsocksr-libev/commits/master | jq -r '.sha')
+        if [[ "$shadowsocksr_libev" != ${now:=0} ]]; then
+          echo "shadowsocksr-libev 可更新 $now $shadowsocksr_libev"
+          sed -i "s/$shadowsocksr_libev/$now/g" /tmp/version
+          echo "shadowsocksr_libev=$now" >> $GITHUB_ENV
+        fi
+        now=$(wget -qO- https://www.php.net/downloads.php|grep -oP 'php\-\d+\.\d+\.\d+\.tar.gz' | head -n 1)     
+        if [[ "$php" != ${now/.tar.gz/} ]]; then
+          echo "php 可更新 ${now/.tar.gz/} $php"
+          sed -i "s/$php/${now/.tar.gz/}/g" /tmp/version
+          echo "php=${now/.tar.gz/}" >> $GITHUB_ENV
+          echo "<tr><td>php</td><td><a href="https://www.php.net/downloads.php">${now/.tar.gz/}</a></td></tr>" >> /tmp/upgrade.log
+        fi
+        data=$(curl --silent --location --cookie "$(curl --silent https://hg.nginx.org/nginx-quic|grep cookie|cut -d'"' -f2|xargs echo -n)" https://hg.nginx.org/nginx-quic|grep "/nginx-quic/rev/"|grep -e "[0-9a-f]\{12\}"|head -n1)
+        now=$(echo $data|cut -d'"' -f2|grep -oP '[0-9a-f]{12}')
+        if [[ "$nginx_quic" != ${now:=0} ]]; then
+          echo "nginx-quic 可更新 $now $nginx_quic"
+          sed -i "s/$nginx_quic/$now/g" /tmp/version
+          echo "nginx_quic=$now" >> $GITHUB_ENV
+          echo "<tr><td><a href="https://quic.nginx.org">nginx-quic</a></td><td><a href="https://hg.nginx.org/nginx-quic/rev/$now">$(echo $data|cut -d'>' -f2|cut -d'<' -f1)</a></td></tr>" >> /tmp/upgrade.log
+        fi
+        #now=$(wget -qO- http://nginx.org/en/download.html|grep -oP '\d+\.\d+\.\d+' | head -n7 | tail -n1)
+        #now=1.18.0 #补丁不适配
+        #if [[ "$nginx_quiche" != ${now:=0} ]]; then
+          #echo "nginx-quiche 可更新 $now $nginx_quiche"
+          #sed -i "s/$nginx_quiche/$now/g" /tmp/version
+          #echo "nginx_quiche=$now" >> $GITHUB_ENV
+        #fi
+        now=$(wget -qO- https://api.github.com/repos/shadowsocks/shadowsocks-rust/commits/master | jq -r '.sha')
+        if [[ "$shadowsocks_rust" != ${now:=0} ]]; then
+          echo "shadowsocks-rust 可更新 $now $shadowsocks_rust"
+          sed -i "s/$shadowsocks_rust/$now/g" /tmp/version
+          echo "shadowsocks_rust=$now" >> $GITHUB_ENV
+        fi
+        new=($(shasum -a1 /tmp/version))
+        if [[ "$old" != "$new" ]]; then
+          echo "开始编译更新..."
+          echo "update=$new" >> $GITHUB_ENV
+          sudo -E timedatectl set-timezone "Asia/Shanghai"
+          sudo -E timedatectl set-ntp true
+          sudo -E mkdir -p /etc/ssmanager/usr /etc/ssmanager/usr/bin /etc/ssmanager/usr/sbin /etc/ssmanager/usr/app
+          sudo -E chown -R runner:docker /etc/ssmanager/usr
+          touch /tmp/upgrade.log /tmp/outputs.sh
+        fi
+        #删除其它编译记录我有强迫症
+        #https://docs.github.com/cn/rest/reference/actions#delete-a-workflow-run
+        #https://docs.github.com/en/actions/reference/context-and-expression-syntax-for-github-actions#github-context
+        for i in $(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/${{ github.repository }}/actions/runs | jq -r '.workflow_runs[].id'); do
+          if [ $i -ne ${{ github.run_id }} ]; then
+            curl -s -X DELETE -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/${{ github.repository }}/actions/runs/$i -u "${{ github.repository_owner }}:${{ github.token }}"
+          fi
+        done
+
+    - name: rust
+      if: ${{ env.update }}
+      run: |
+        rustup update
+        rustup install nightly
+        rustc --version
+        rustup target add x86_64-unknown-linux-gnu
+
+    - name: upx
+      if: ${{ env.update }}
+      run: |
+        cd /tmp
+        #latest_version=$(wget -qO- https://api.github.com/repos/upx/upx/releases/latest | grep 'tag_name' | cut -d\" -f4)
+        #wget --quiet --continue https://github.com/upx/upx/releases/download/$latest_version/upx-${latest_version:1}-amd64_linux.tar.xz
+        #tar xJf upx*-amd64_linux.tar.xz
+        #sudo mv -f upx-*-amd64_linux/upx /usr/local/bin
+        #rm -rf upx*
+        #upx -V
+        wget --quiet --continue http://www.oberhumer.com/opensource/ucl/download/ucl-1.03.tar.gz
+        tar -xzf ucl-1.03.tar.gz
+        cd ucl-1.03
+        #https://blog.csdn.net/qq_34905587/article/details/106663453
+        ./configure CPPFLAGS="$CPPFLAGS -std=c90 -fPIC"
+        make
+        sudo make install
+        git clone --depth 1 https://github.com/upx/upx /tmp/upx
+        cd /tmp/upx
+        git submodule update --init --recursive
+        make all -j2
+        strip src/upx.out
+        sudo mv -f src/upx.out /usr/local/bin/upx
+        make clean
+        upx -V
+        
+    - name: shfmt
+      if: ${{ env.ss_main }}
+      run: |
+        GO111MODULE=on go get mvdan.cc/sh/v3/cmd/shfmt
+        sudo cp -f $(go env GOPATH)/bin/shfmt /usr/local/bin
+        shfmt -version
+        
+    - name: Checkout
+      if: ${{ env.update || github.event.inputs.reset == 'yes' }}
+      timeout-minutes: 2
+      with:
+        #ref: dev
+        submodules: true
+      uses: actions/checkout@main
+
+    - name: go
+      if: ${{ env.update }}
+      run: |
+        cd /tmp
+        latest_version="$(wget -qO- https://golang.org/dl/|grep 'download downloadBox' | grep -oP '\d+\.\d+(\.\d+)?' | head -n 1)"
+        echo "Downloading latest Go for AMD64: ${latest_version}"
+        wget --quiet --continue https://dl.google.com/go/go${latest_version}.linux-amd64.tar.gz
+        sudo tar -C /usr/local -xzf go${latest_version}.linux-amd64.tar.gz
+        rm -f go${latest_version}.linux-amd64.tar.gz
+        #必须更改变量，不然调用go编译器报错
+        echo "GOROOT=/usr/local/go" >> $GITHUB_ENV
+        echo "GOTOOLDIR=/usr/local/go/pkg/tool/linux_amd64" >> $GITHUB_ENV
+        sudo ln -sf /usr/local/go/bin/go /usr/bin/go
+        go version
+        go env
+
+    - name: openssl
+      if: ${{ env.php }}
+      run: |
+        cd /tmp
+        latest_version="$(wget -qO- https://www.openssl.org/source/|grep -oP 'openssl\-\d+\.\d+\.\d+\w+\.tar\.gz' | head -n1)"
+        wget --quiet --continue https://www.openssl.org/source/${latest_version}
+        tar -xzf ${latest_version}
+        rm -f ${latest_version}
+        mv ${latest_version/.tar.gz/} openssl
+        cd openssl
+        ./Configure \
+        no-shared \
+        linux-x86_64
+        #--prefix=/usr
+        make -j2
+        sudo make install_sw
+        make distclean
+      
+    - name: kcptun
+      if: ${{ env.kcptun }}
+      run: |
+        cd /tmp
+        git clone --depth 1 https://github.com/xtaci/kcptun.git
+        cd kcptun/server
+        echo "<tr><td>kcptun</td><td><a href="https://github.com/xtaci/kcptun/commit/$(git log --pretty=format:"%H")">$(git log --pretty=format:"%s%n")</a></td></tr>" >> /tmp/upgrade.log
+        env GO111MODULE=on CGO_ENABLED=1 GOOS=linux GOARCH=amd64 /usr/local/go/bin/go build -mod=vendor -ldflags "-X main.VERSION=`date -u +%Y%m%d` -s -w" -o /etc/ssmanager/usr/bin/kcptun-server
+        upx --best --ultra-brute /etc/ssmanager/usr/bin/kcptun-server
+        /etc/ssmanager/usr/bin/kcptun-server -version
+        echo "cp -vf /etc/ssmanager/usr/bin/kcptun-server ${GITHUB_WORKSPACE}/usr/bin" >> /tmp/outputs.sh
+
+    - name: v2ray-plugin
+      if: ${{ env.v2ray_plugin }}
+      run: |
+        cd /tmp
+        git clone --depth 1 https://github.com/teddysun/v2ray-plugin.git
+        cd v2ray-plugin
+        echo "<tr><td>v2ray-plugin</td><td><a href="https://github.com/teddysun/v2ray-plugin/commit/$(git log --pretty=format:"%H")">$(git log --pretty=format:"%s%n")</a></td></tr>" >> /tmp/upgrade.log
+        /usr/local/go/bin/go get -d ./...
+        env CGO_ENABLED=1 GOOS=linux GOARCH=amd64 /usr/local/go/bin/go build -ldflags "-X main.VERSION=`date -u +%Y%m%d` -s -w" -o /etc/ssmanager/usr/bin/v2ray-plugin
+        upx --best --ultra-brute /etc/ssmanager/usr/bin/v2ray-plugin
+        /etc/ssmanager/usr/bin/v2ray-plugin -version
+        echo "cp -vf /etc/ssmanager/usr/bin/v2ray-plugin ${GITHUB_WORKSPACE}/usr/bin" >> /tmp/outputs.sh
+
+    - name: qrencode
+      if: ${{ env.qrencode }}
+      run: |
+        cd /tmp
+        git clone --depth 1 https://github.com/fukuchi/libqrencode
+        cd libqrencode
+        echo "<tr><td>libqrencode</td><td><a href="https://github.com/fukuchi/libqrencode/commit/$(git log --pretty=format:"%H")">$(git log --pretty=format:"%s%n")</a></td></tr>" >> /tmp/upgrade.log
+        ./autogen.sh
+        ./configure --without-png --enable-shared=no --prefix=/etc/ssmanager/usr
+        make -j2
+        make install
+        make clean
+        strip /etc/ssmanager/usr/bin/qrencode
+        upx --best --ultra-brute /etc/ssmanager/usr/bin/qrencode
+        /etc/ssmanager/usr/bin/qrencode -V
+        echo."cp -vf /etc/ssmanager/usr/bin/qrencode ${GITHUB_WORKSPACE}/usr/bin" >> /tmp/outputs.sh
+        
+    - name: simple-obfs
+      if: ${{ env.simple_obfs }}
+      run: |
+        cd /tmp
+        git clone --depth 1 https://github.com/shadowsocks/simple-obfs
+        cd simple-obfs
+        echo "<tr><td>simple-obfs</td><td><a href="https://github.com/shadowsocks/simple-obfs/commit/$(git log --pretty=format:"%H")">$(git log --pretty=format:"%s%n")</a></td></tr>" >> /tmp/upgrade.log
+        git submodule update --init
+        ./autogen.sh
+        #https://www.cnblogs.com/z16166/p/13192665.html
+        env LDFLAGS=-no-pie ./configure \
+        --disable-documentation \
+        --prefix=/etc/ssmanager/usr
+        find ./ -name "Makefile" -type f -exec sed -i 's/-lev/-l:libev.a/g' {} +
+        make -j2
+        make install
+        strip /etc/ssmanager/usr/bin/obfs-server
+        upx --best --ultra-brute /etc/ssmanager/usr/bin/obfs-server
+        echo "cp -vf /etc/ssmanager/usr/bin/obfs-server ${GITHUB_WORKSPACE}/usr/bin" >> /tmp/outputs.sh
+        make clean
+
+    - name: shadowsocksr-libev
+      if: ${{ env.shadowsocksr_libev }}
+      run: |
+        cd /tmp
+        #git clone --depth 1 https://github.com/ARMmbed/mbedtls
+        #cd mbedtls
+        #ssr源码只兼容到这一版本mbedtls
+        wget --quiet --continue https://github.com/ARMmbed/mbedtls/archive/refs/tags/v2.26.0.tar.gz
+        tar -xzf v2.26.0.tar.gz
+        cd mbedtls-2.26.0
+        make no_test -j2
+        sudo make install DESTDIR=/usr/local
+        git clone --depth 1 https://github.com/shadowsocksrr/shadowsocksr-libev
+        cd shadowsocksr-libev
+        echo "<tr><td>shadowsocksr-libev</td><td><a href="https://github.com/shadowsocksrr/shadowsocksr-libev/commit/$(git log --pretty=format:"%H")">$(git log --pretty=format:"%s%n")</a></td></tr>" >> /tmp/upgrade.log
+        ./autogen.sh
+        ./configure --disable-documentation --with-crypto-library=mbedtls --prefix=/etc/ssmanager/usr
+        find ./ -name "Makefile" -type f -exec sed -i 's/-lmbedcrypto -lm -lpcre/-l:libmbedcrypto.a -lm -l:libpcre.a/g' {} +
+        make -j2
+        make install
+        strip /etc/ssmanager/usr/bin/ss-redir
+        upx --best --ultra-brute /etc/ssmanager/usr/bin/ss-redir
+        echo "cp -vf /etc/ssmanager/usr/bin/ss-redir ${GITHUB_WORKSPACE}/usr/bin" >> /tmp/outputs.sh
+        make clean
+
+    - name: php
+      if: ${{ env.php }}
+      run: |
+        cd /tmp
+        wget --quiet --continue https://www.php.net/distributions/${php}.tar.gz
+        tar -xzf ${php}.tar.gz
+        rm -f ${php}.tar.gz
+        #编译依赖库
+        git clone --depth 1 https://gitlab.gnome.org/GNOME/libxml2.git
+        cd libxml2
+        autoreconf -vfi
+        ./configure --enable-shared=no
+        make -j2
+        sudo make install
+        git clone --depth 1 https://github.com/kkos/oniguruma
+        cd oniguruma
+        ./autogen.sh
+        ./configure --enable-shared=no
+        make -j2
+        sudo make install
+        git clone --depth 1 https://github.com/curl/curl.git
+        cd curl
+        autoreconf -vfi
+        ./configure --with-openssl --enable-shared=no
+        make -j2
+        sudo make install
+        cd /tmp/$php
+        ./buildconf
+        ./configure \
+        --with-curl \
+        --with-openssl \
+        --enable-mbstring \
+        --enable-fpm \
+        --enable-sockets \
+        --without-sqlite3 \
+        --without-pdo-sqlite \
+        --enable-shared=no \
+        --prefix=/etc/ssmanager/usr
+        #patch -p0 Makefile < ${GITHUB_WORKSPACE}/patch/Makefile_php.patch
+        make -j2
+        make install
+        make clean
+        strip /etc/ssmanager/usr/sbin/php-fpm /etc/ssmanager/usr/bin/php
+        upx --best --ultra-brute /etc/ssmanager/usr/sbin/php-fpm /etc/ssmanager/usr/bin/php
+        /etc/ssmanager/usr/sbin/php-fpm -v
+        /etc/ssmanager/usr/bin/php -v
+        echo "cp -vf /etc/ssmanager/usr/sbin/php-fpm /etc/ssmanager/usr/bin/php ${GITHUB_WORKSPACE}/usr/sbin" >> /tmp/outputs.sh
+
+    - name: nginx-ngx_brotli
+      if: ${{ env.nginx_quic }}
+      run: |
+        git clone --recursive https://github.com/google/ngx_brotli /tmp/ngx_brotli
+        cd /tmp/ngx_brotli&&git submodule update --init
+        
+    - name: nginx-quic
+      if: ${{ env.nginx_quic }}
+      run: |
+        cd /tmp
+        git clone --depth 1 https://boringssl.googlesource.com/boringssl
+        mkdir boringssl/build
+        cd boringssl/build
+        cmake ..
+        make -j2
+        hg clone -b quic https://hg.nginx.org/nginx-quic /tmp/nginx-quic
+        cd /tmp/nginx-quic
+        ./auto/configure \
+        --prefix=/etc/ssmanager/usr \
+        --user=nobody \
+        --group=root \
+        --with-pcre \
+        --with-stream \
+        --with-pcre-jit \
+        --with-threads \
+        --with-http_stub_status_module \
+        --with-http_dav_module \
+        --with-http_ssl_module \
+        --with-stream_ssl_module \
+        --with-stream_ssl_preread_module \
+        --with-http_v2_module \
+        --with-http_v3_module \
+        --add-module=/tmp/ngx_brotli \
+        --with-cc-opt="-Wno-error=type-limits -I../boringssl/include" \
+        --with-ld-opt="-L../boringssl/build/ssl -L../boringssl/build/crypto"
+        find ./ -name "Makefile" -type f -exec sed -i 's/-lpcre/-l:libpcre.a/g' {} +
+        make -j2
+        make install
+        make clean
+        strip /etc/ssmanager/usr/sbin/nginx
+        upx --best --ultra-brute /etc/ssmanager/usr/sbin/nginx
+        /etc/ssmanager/usr/sbin/nginx -V
+        echo "cp -vf /etc/ssmanager/usr/sbin/nginx ${GITHUB_WORKSPACE}/usr/sbin" >> /tmp/outputs.sh
+
+    #- name: nginx-quiche
+      #if: ${{ env.nginx_quiche }}
+      #run: |
+        #cd /tmp
+        #git clone --recursive https://github.com/cloudflare/quiche
+        #latest_version="$(wget -qO- http://nginx.org/en/download.html|grep -oP 'nginx\-\d+\.\d+\.\d+\.tar.gz'|head -n3|tail -n1)"
+        #wget --quiet --continue https://nginx.org/download/${latest_version}
+        #echo "<tr><td>nginx-quiche</td><td><a href="http://nginx.org/en/download.html">$nginx_quiche</a></td></tr>" >> /tmp/upgrade.log
+        #tar -xzf ${latest_version}
+        #cd ${latest_version/.tar.gz/}
+        #patch -p01 < ../quiche/extras/nginx/nginx-1.16.patch
+        #./configure \
+        #--with-cc-opt='-Wno-error=type-limits' \
+        #--build="quiche-$(git --git-dir=../quiche/.git rev-parse --short HEAD)" \
+        #--with-debug \
+        #--prefix=/etc/ssmanager/usr \
+        #--user=root \
+        #--group=root \
+        #--with-pcre \
+        #--with-stream \
+        #--with-pcre-jit \
+        #--with-threads \
+        #--with-http_auth_request_module \
+        #--with-http_realip_module \
+        #--with-http_stub_status_module \
+        #--with-http_ssl_module \
+        #--with-stream_ssl_module \
+        #--with-stream_ssl_preread_module \
+        #--with-http_v2_module \
+        #--with-http_v3_module \
+        #--with-openssl=../quiche/deps/boringssl \
+        #--with-quiche=../quiche \
+        #--add-module=/tmp/ngx_brotli
+        #find ./ -name "Makefile" -type f -exec sed -i 's/-lpcre/-l:libpcre.a/g' {} +
+        #make -j2
+        #make install
+        #make clean
+        #strip /etc/ssmanager/usr/sbin/nginx
+        #upx --best --ultra-brute /etc/ssmanager/usr/sbin/nginx
+        #/etc/ssmanager/usr/sbin/nginx -V
+        #echo "cp -vf /etc/ssmanager/usr/sbin/nginx ${GITHUB_WORKSPACE}/usr/sbin" >> /tmp/outputs.sh
+        
+    - name: shadowsocks-rust
+      if: ${{ env.shadowsocks_rust }}
+      run: |
+        cd /tmp
+        git clone --depth 1 https://github.com/shadowsocks/shadowsocks-rust.git
+        cd shadowsocks-rust
+        echo "<tr><td>shadowsocks-rust</td><td><a href="https://github.com/shadowsocks/shadowsocks-rust/commit/$(git log --pretty=format:"%H")">$(git log --pretty=format:"%s%n")</a></td></tr>" >> /tmp/upgrade.log
+        #https://users.rust-lang.org/t/how-to-link-openssl-statically/14912
+        #https://docs.rs/openssl/0.10.30/openssl/
+        #env RUSTFLAGS="-Ctarget-feature=+aes,+ssse3" OPENSSL_STATIC=1 OPENSSL_LIB_DIR=/tmp/tempdir/lib OPENSSL_INCLUDE_DIR=/tmp/tempdir/include SODIUM_LIB_DIR=/tmp/tempdir/lib cargo +nightly build --release --target x86_64-unknown-linux-gnu --features "local-socks4 local-http local-tunnel local-redir trust-dns"
+        #https://learnku.com/rust/t/45296
+        env CARGO_HTTP_MULTIPLEXING=false cargo +nightly build --release --target x86_64-unknown-linux-gnu --features ""
+        for i in ssurl ssmanager;do
+          cp -vf target/x86_64-unknown-linux-gnu/release/$i /etc/ssmanager/usr/bin
+          strip /etc/ssmanager/usr/bin/$i
+          upx --best --ultra-brute -v /etc/ssmanager/usr/bin/$i
+          /etc/ssmanager/usr/bin/$i -V
+          echo "cp -vf /etc/ssmanager/usr/bin/$i ${GITHUB_WORKSPACE}/usr/bin" >> /tmp/outputs.sh
+        done
+
+    - name: ss-tool
+      if: ${{ env.ss_tool }}
+      run: |
+        gcc -s -fPIE -O3 -o /etc/ssmanager/usr/bin/ss-tool src/main.c
+        #mv -f ss-tool usr/bin
+        echo "cp -vf /etc/ssmanager/usr/bin/ss-tool ${GITHUB_WORKSPACE}/usr/bin" >> /tmp/outputs.sh
+        
+    - name: ss-main
+      if: ${{ env.ss_main }}
+      run: |
+        shfmt -l -s -w src/manager.sh
+        cp -vf src/manager.sh /tmp
+        gzexe /tmp/manager.sh
+        echo "cp -vf /tmp/manager.sh ${GITHUB_WORKSPACE}/usr/bin/ss-main" >> /tmp/outputs.sh
+
+    - uses: actions/checkout@main
+    - run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        if [ "${{ github.event.inputs.reset }}" == 'yes' ]; then
+          git checkout --orphan  new_branch
+          git add -A
+          git commit -am "Initial commit"
+          git branch -D ${GITHUB_REF##*/}
+          git branch -m ${GITHUB_REF##*/}
+          git push -f origin ${GITHUB_REF##*/}
+        fi
+        [ -z ${{ env.update }} ] && exit 0
+        bash src/make_readme.sh
+        bash /tmp/outputs.sh
+        shasum -a512 \
+        usr/bin/v2ray-plugin \
+        usr/bin/kcptun-server \
+        usr/bin/obfs-server \
+        usr/bin/qrencode \
+        usr/bin/ss-main \
+        usr/bin/ssmanager \
+        usr/bin/ss-tool \
+        usr/bin/ssurl \
+        > version/update
+        sed -i "s/usr/\/etc\/ssmanager\/usr/g" version/update
+        cp -vf /tmp/version version
+        #rm -rf usr
+        #sudo mv -fv /etc/ssmanager/usr .
+        #sudo -E chown -R runner:docker usr
+        #git config user.name "${{ github.repository_owner }}"
+        #git config user.email "${{ secrets.MY_EMAIL }}"
+        if [ ${{ env.ss_main }} ]; then
+          shfmt -l -s -w src/manager.sh
+        fi
+        git add README.md src/manager.sh version/* usr/*
+        git commit -m "${{ github.actor }} ${{ github.event_name }}"
+        #git push https:://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}.git
+        git push origin ${GITHUB_REF##*/}
