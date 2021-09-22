@@ -1670,14 +1670,19 @@ Start_nginx_program() {
 	#groupadd web
 	#useradd -g web nginx -M -s /sbin/nologin
 	if nginx -c $HOME_DIR/conf/nginx.conf -t; then
-		nginx -c $HOME_DIR/conf/nginx.conf
-		Prompt "现在可以访问你的域名 https://$tls_common_name 了"
+		if nginx -c $HOME_DIR/conf/nginx.conf; then
+			if php-fpm -n -y $HOME_DIR/conf/php-fpm.conf -R; then
+				Prompt "现在可以访问你的域名 https://$tls_common_name 了"
+			else
+				Prompt "请检查php-fpm配置是否有误"
+				Exit
+			fi
+		else
+			Prompt "出现未知错误"
+			Exit
+		fi
 	else
 		Prompt "请检查nginx配置是否有误"
-		Exit
-	fi
-	if ! php-fpm -n -y $HOME_DIR/conf/php-fpm.conf -R; then
-		Prompt "请检查php-fpm配置是否有误"
 		Exit
 	fi
 }
@@ -1820,7 +1825,11 @@ EOF
 			;;
 		11)
 			if [ "$nginx_on" = "--standalone" ]; then
-				Start_nginx_program
+				if [ -z "$(netstat -ln | grep LISTEN | grep ":80 ")" -a -z "$(netstat -ln | grep LISTEN | grep ":443 ")" ]; then
+					Start_nginx_program
+				else
+					Prompt "80或443端口被其它进程占用！"
+				fi
 			else
 				Prompt "服务运行中请先停止运行!"
 			fi
