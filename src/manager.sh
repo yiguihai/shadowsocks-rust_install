@@ -1825,7 +1825,7 @@ EOF
 			;;
 		11)
 			if [ "$nginx_on" = "--standalone" ]; then
-				if [ -z "$(netstat -ln | grep LISTEN | grep ":80 ")" -a -z "$(netstat -ln | grep LISTEN | grep ":443 ")" ]; then
+				if [ -z "$(netstat -ln | grep LISTEN | grep ':80 \|:443 ')" ]; then
 					Start_nginx_program
 				else
 					Prompt "80或443端口被其它进程占用！"
