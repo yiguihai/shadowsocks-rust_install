@@ -26,7 +26,7 @@ systemctl disable ss-main
 <details open>
   <summary>更新记录</summary>
   <table>
-    <caption><i><b>2021年09月22日 16:19:59</b></i></caption>
+    <caption><i><b>2021年09月23日 00:22:44</b></i></caption>
     <thead>
       <tr>
         <th>项目</th>
@@ -34,7 +34,8 @@ systemctl disable ss-main
       </tr>
     </thead>
     <tbody>
-      <tr><td>shadowsocks-rust</td><td><a href=https://github.com/shadowsocks/shadowsocks-rust/commit/6a88f3040036770121543f36efec712b0dd10e24>release v1.12.0-alpha.4</a></td></tr>
+      <tr><td><a href=https://quic.nginx.org>nginx-quic</a></td><td><a href=https://hg.nginx.org/nginx-quic/rev/ea9b645472b5>HTTP/3: fixed null pointer dereference with server push.</a></td></tr>
+<tr><td>kcptun</td><td><a href=https://github.com/xtaci/kcptun/commit/94c9cacf4f87118e5e7716a7c1c41835f4fc04c9>upd deps to smux to v1.5.16</a></td></tr>
     </tbody>
   </table>
 </details>
