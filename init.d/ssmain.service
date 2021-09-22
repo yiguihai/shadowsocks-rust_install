@@ -1,0 +1,16 @@
+[Unit]
+Description=A Python3 Script to manager the shadowsocks-rust for multiport
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ssmain start
+ExecReload=/usr/local/bin/ssmain restart
+ExecStop=/usr/local/bin/ssmain stop
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
