@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 
 import os
+#import sys
 import socket
 import ipaddress
 import shutil
 import platform
 import random
-import importlib.util
+import json
+#import importlib.util
 import configparser as ini
 from util_core import downloader as dl
 from util_core import (HOME_DIR, URL, URL2, common_install, common_remove)
@@ -34,16 +36,25 @@ def isApt():
 
 def isSystemctl():
     if shutil.which('systemctl'):
-        if os.path.exists('/etc/systemd/system/ss-main.service') is False:
-            exit('no found file')
+        if os.path.exists('/etc/systemd/system/ssmain.service') is False:
+            dl.download(URL + '/init.d/ssmain.service', '/etc/systemd/system')
+            if os.path.exists('/etc/systemd/system/ssmain.service') is False:
+                exit('Download ' + '/etc/systemd/system/ssmain.service' +
+                     ' failed')
+            else:
+                os.chmod('/etc/systemd/system/ssmain.service', 0o644)
+            for i in [
+                    'enable ssmain.service', 'daemon-reload', 'reset-failed'
+            ]:
+                subprocess.Popen('systemctl ' + i, shell=True).wait()
     else:
         exit('No command systemctl found.')
 
 
 def isPython3():
     ver = platform.python_version_tuple()
-    if int(ver[0]) < 3 or int(ver[0]) == 3 and int(ver[1]) < 8:
-        exit('Python version < 3.8')
+    if int(ver[0]) < 3 or int(ver[0]) == 3 and int(ver[1]) < 7:
+        exit('Python version < 3.7')
     if shutil.which('pip3') is None:
         #subprocess.run([common_install, "python3-pip"])
         subprocess.Popen(common_install + " python3-pip", shell=True).wait()
@@ -85,17 +96,29 @@ def dlBinary():
         for line in fd.read().splitlines():
             sha, file = line.split()
             dir, name = os.path.split(file)
+            if name == 'ss-main' or name == 'ss-tool':
+                continue
             url += URL + '/usr/bin/' + name + ' '
         if os.path.exists(file) is False:
             dl.download(url, dir)
     with open(HOME_DIR + '/conf/update', 'r') as fd:
         for line in fd.read().splitlines():
             sha, file = line.split()
+            dir, name = os.path.split(file)
+            if name == 'ss-main' or name == 'ss-tool':
+                continue
             if os.path.exists(file) is False:
                 exit('Download ' + file + ' failed')
+            else:
+                os.chmod(file, 0o755)
+            if file == '/etc/ssmanager/usr/bin/ssmain' and not os.path.islink(
+                    '/usr/local/bin/ssmain'):
+                os.remove('/usr/local/bin/ssmain')
+                os.symlink('/etc/ssmanager/usr/bin/ssmain',
+                           '/usr/local/bin/ssmain')
 
 
-def port_is_use(ipv: int, port: int):
+def port_is_use(ipv: int, port: int) -> bool:
     #https://www.kite.com/python/answers/how-to-check-if-a-network-port-is-open-in-python
     if ipv == 4:
         t_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -123,9 +146,13 @@ def port_is_use(ipv: int, port: int):
     return tcp_use or udp_use
 
 
+def random_num(start_port: int, end_port: int) -> int:
+    return random.randint(start_port, end_port)
+
+
 def random_port(start_port: int = 1024, end_port: int = 65535):
     while True:
-        random_port = random.randint(start_port, end_port)
+        random_port = random_num(start_port, end_port)
         if not port_is_use(4, random_port) and not port_is_use(6, random_port):
             return random_port
 
@@ -139,6 +166,17 @@ def random_str(max: int):
         ], max)))
 
 
+def controller_ipc(string: str) -> str:
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    sock.bind('/tmp/ssclient.socket')
+    sock.connect('/tmp/ss-manager.socket')
+    sock.sendall(string.encode())
+    data = sock.recv(1506).decode()
+    sock.close()
+    os.remove('/tmp/ssclient.socket')
+    return data
+
+
 def extract_ip(ipv: int = 4):
     #https://www.delftstack.com/howto/python/get-ip-address-python/
     if ipv == 4:
@@ -147,14 +185,14 @@ def extract_ip(ipv: int = 4):
             st.connect(('8.8.8.8', 1))
         except OSError as err:
             print("IPv4: {0}".format(err.strerror))
-            exit()
+            exit(1)
     if ipv == 6:
         try:
             st = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
             st.connect(('2001:4860:4860::8888', 1))
         except OSError as err:
             print("IPv6: {0}".format(err.strerror))
-            exit()
+            exit(1)
     IP = st.getsockname()[0]
     st.close()
     return IP
@@ -182,11 +220,11 @@ def is_ipv6(ip):
     return True
 
 
-def check_ip(ip):
+def check_ip(ip) -> bool:
     return is_ipv4(ip) or is_ipv6(ip)
 
 
-def ipv4_or_ipv6(ip):
+def ipv4_or_ipv6(ip) -> int:
     if check_ip(ip):
         if is_ipv4(ip):
             return 4
@@ -199,16 +237,18 @@ def env_get(str):
     return os.getenv(str)
 
 
-def pid():
+def pid() -> int:
     return os.getpid()
 
 
-def is_global(ip):
+def is_global(ip) -> bool:
     #https://www.geeksforgeeks.org/how-to-manipulate-ip-addresses-in-python-using-ipaddress-module/
     return ipaddress.ip_address(ip).is_global
 
 
-def mod_check(name: str):
+'''
+#此特性3.8后才支持
+def mod_check(name: str) -> int:
     #https://stackoverflow.com/questions/1051254/check-if-python-package-is-installed
 
     if name in sys.modules:
@@ -224,7 +264,91 @@ def mod_check(name: str):
     else:
         #print(f"can't find the {name!r} module")
         return 2
+'''
+
+
+def module_check() -> list:
+    list = []
+    try:
+        import daemon
+    except ImportError as e:
+        list.append('python-daemon')
+    try:
+        import rich
+    except ImportError as e:
+        list.append('rich')
+    return list
 
 
 def pause():
     input('Press any key to start...or Press Ctrl+D to cancel')
+
+
+def address_lookup() -> str:
+    with urllib.request.urlopen('https://ipapi.co/json', timeout=3) as f:
+        data = json.loads(f.read().decode('utf-8'))
+        city = data['city']
+        region = data['region']
+        country_name = data['country_name']
+        return city + ', ' + region + ', ' + country_name
+
+
+def parsing_user(data: str) -> list:
+    dict = {}
+    for line in data.split('|'):
+        key, val = line.split('^')
+        if 'server_port' == key:
+            dict['server_port'] = val
+        if 'password' == key:
+            dict['password'] = val
+        if 'method' == key:
+            dict['method'] = val
+        if 'plugin' == key:
+            dict['plugin'] = val
+        if 'plugin_opts' == key:
+            dict['plugin_opts'] = val
+        if 'total' == key:
+            dict['total'] = val
+    return dict
+
+
+def parsing_plugin_opts(data: str, key: str):
+    for line in data.split(';'):
+        if line == key:
+            return True
+        if key == line.split('=')[0]:
+            return line.split('=')[1]
+
+
+def traffic(data: int = 0):
+    if data < 1024:
+        return str(data) + ' Bytes'
+    elif data < 1024**2:
+        return ('%.2f' % (data / 1024) + ' KB')
+    elif data < 1024**3:
+        return ('%.2f' % (data / 1024**2) + ' MB')
+    elif data < 1024**4:
+        return ('%.2f' % (data / 1024**3) + ' GB')
+    elif data < 1024**5:
+        return ('%.2f' % (data / 1024**4) + ' TB')
+    elif data < 1024**6:
+        return ('%.2f' % (data / 1024**5) + ' PB')
+    elif data < 1024**7:
+        return ('%.2f' % (data / 1024**6) + ' EB')
+    elif data < 1024**8:
+        return ('%.2f' % (data / 1024**7) + ' ZB')
+    elif data < 1024**9:
+        return ('%.2f' % (data / 1024**8) + ' YB')
+
+
+def used_traffic(port: int = 0):
+    data = json.loads(controller_ipc('ping')[6:-1])
+    return data[str(port)]
+
+
+def runing(file: str) -> bool:
+    if os.path.isfile(file):
+        with open(file, 'r') as fd:
+            if os.path.isdir('/proc/' + fd.read()):
+                return True
+    return False

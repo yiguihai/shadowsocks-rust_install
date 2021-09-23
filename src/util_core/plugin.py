@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import re
+from re import compile, fullmatch
 from util_core.utils import (random_port, random_str, port_is_use)
 
 
 class Obfs_plugin:
     '''simple-obfs参数输入'''
     def __init__(self):
-        self.obfs = ('http', 'tls')
+        self.obfs = ['http', 'tls']
 
     def get_obfs(self):
         while True:
@@ -29,18 +29,19 @@ class Kcptun_plugin:
     '''kcptun参数输入'''
     def __init__(self):
         self.key = random_str(16)
-        self.crypt = ('aes', 'aes-128', 'aes-192', 'salsa20', 'blowfish',
-                      'twofish', 'cast5', '3des', 'tea', 'xtea', 'xor', 'sm4',
-                      'none')
-        self.mode = ('fast3', 'fast2', 'fast', 'normal', 'manual')
+        self.crypt = [
+            'aes', 'aes-128', 'aes-192', 'salsa20', 'blowfish', 'twofish',
+            'cast5', '3des', 'tea', 'xtea', 'xor', 'sm4', 'none'
+        ]
+        self.mode = ['fast3', 'fast2', 'fast', 'normal', 'manual']
         self.mtu = 1350
         self.sndwnd = 1024
         self.rcvwnd = 1024
         self.datashard = 10
         self.parityshard = 3
         self.dscp = 0
-        self.nocomp = ('true', 'false')
-        self.acknodelay = ('true', 'false')
+        self.nocomp = ['true', 'false']
+        self.acknodelay = ['true', 'false']
         self.nodelay = 0
         self.interval = 30
         self.resen = 2
@@ -48,7 +49,7 @@ class Kcptun_plugin:
 
     def get_key(self):
         while True:
-            pattern = re.compile('[A-Za-z0-9]+')
+            pattern = compile('[A-Za-z0-9]+')
             print('key:')
             key = input('(Default: {0}): '.format(self.key))
             if pattern.fullmatch(key) is not None:
@@ -82,7 +83,7 @@ class Kcptun_plugin:
             except ValueError:
                 print('input out of range!')
 
-    def get_mtu(self):
+    def get_mtu(self) -> int:
         #https://www.v2ex.com/t/800024
         while True:
             try:
@@ -107,7 +108,7 @@ class Kcptun_plugin:
             except ValueError:
                 return self.sndwnd
 
-    def get_rcvwnd(self):
+    def get_rcvwnd(self) -> int:
         while True:
             try:
                 print('rcvwnd:')
@@ -119,7 +120,7 @@ class Kcptun_plugin:
             except ValueError:
                 return self.rcvwnd
 
-    def get_datashard(self):
+    def get_datashard(self) -> int:
         while True:
             try:
                 print('datashard,ds:')
@@ -130,7 +131,7 @@ class Kcptun_plugin:
             else:
                 return datashard
 
-    def get_parityshard(self):
+    def get_parityshard(self) -> int:
         while True:
             try:
                 print('parityshard,ps:')
@@ -141,7 +142,7 @@ class Kcptun_plugin:
             else:
                 return parityshard
 
-    def get_dscp(self):
+    def get_dscp(self) -> int:
         while True:
             try:
                 print('dscp:')
@@ -177,7 +178,7 @@ class Kcptun_plugin:
             except ValueError:
                 print('input out of range!')
 
-    def get_nodelay(self):
+    def get_nodelay(self) -> int:
         while True:
             try:
                 print('nodelay:')
@@ -187,31 +188,31 @@ class Kcptun_plugin:
             else:
                 return nodelay
 
-    def get_interval(self):
+    def get_interval(self) -> int:
         while True:
             try:
                 print('interval:')
-                nodelay = int(input('(Default: {0}): '.format(self.interval)))
+                interval = int(input('(Default: {0}): '.format(self.interval)))
             except ValueError:
                 return self.interval
             else:
                 return interval
 
-    def get_resen(self):
+    def get_resen(self) -> int:
         while True:
             try:
                 print('resen:')
-                nodelay = int(input('(Default: {0}): '.format(self.resen)))
+                resen = int(input('(Default: {0}): '.format(self.resen)))
             except ValueError:
                 return self.resen
             else:
                 return resen
 
-    def get_nc(self):
+    def get_nc(self) -> int:
         while True:
             try:
                 print('nc:')
-                nodelay = int(input('(Default: {0}): '.format(self.nc)))
+                nc = int(input('(Default: {0}): '.format(self.nc)))
             except ValueError:
                 return self.nc
             else:
@@ -221,8 +222,9 @@ class Kcptun_plugin:
 class V2ray_plugin:
     '''v2ray-plugin参数输入'''
     def __init__(self):
-        self.mode = ('websocket-http', 'websocket-tls', 'quic-tls', 'grpc',
-                     'grpc-tls')
+        self.mode = [
+            'websocket-http', 'websocket-tls', 'quic-tls', 'grpc', 'grpc-tls'
+        ]
         self.path = random_str(12)
         self.servicename = 'GunService'
 
@@ -241,7 +243,7 @@ class V2ray_plugin:
 
     def get_path(self):
         while True:
-            pattern = re.compile('[A-Za-z0-9]+')
+            pattern = compile('[A-Za-z0-9]+')
             print('Enter a URL path for websocket.')
             v2ray_path = input('(Default: {0}): '.format(self.v2ray_path))
             if pattern.fullmatch(v2ray_path) is not None:
@@ -251,7 +253,7 @@ class V2ray_plugin:
 
     def get_servicename(self):
         while True:
-            pattern = re.compile('[A-Za-z0-9]+')
+            pattern = compile('[A-Za-z0-9]+')
             print(
                 'Enter a Service name for grpc (Requires client support otherwise please leave the default)'
             )
