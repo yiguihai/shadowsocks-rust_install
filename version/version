@@ -10,4 +10,4 @@ shadowsocksr_libev=4799b312b8244ec067b8ae9ba4b85c877858976c
 php=php-8.0.10
 nginx_quiche=1.18.0
 nginx_quic=ea9b645472b5
-shadowsocks_rust=6a88f3040036770121543f36efec712b0dd10e24
+shadowsocks_rust=afb94fced0ac6624fcb15d8e30bb9818427f21cf
