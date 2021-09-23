@@ -26,7 +26,7 @@ systemctl disable ss-main
 <details open>
   <summary>更新记录</summary>
   <table>
-    <caption><i><b>2021年09月23日 16:22:05</b></i></caption>
+    <caption><i><b>2021年09月24日 00:42:43</b></i></caption>
     <thead>
       <tr>
         <th>项目</th>
@@ -34,7 +34,7 @@ systemctl disable ss-main
       </tr>
     </thead>
     <tbody>
-      <tr><td>shadowsocks-rust</td><td><a href=https://github.com/shadowsocks/shadowsocks-rust/commit/afb94fced0ac6624fcb15d8e30bb9818427f21cf>📛 OOCv1: name -> remarks</a></td></tr>
+      <tr><td>php</td><td><a href=https://www.php.net/downloads.php>php-8.0.11</a></td></tr>
     </tbody>
   </table>
 </details>
